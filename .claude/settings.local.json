@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__visualize__read_me",
+      "mcp__visualize__show_widget",
+      "Skill(run)",
+      "Skill(run:*)",
+      "Bash(npm run *)",
+      "PowerShell($env:PATH += \";C:\\\\Program Files\\\\nodejs\"; Set-Location \"C:\\\\Users\\\\belin\\\\OneDrive\\\\Documents\\\\App Development\\\\bcorp\"; node --version; npm --version)"
+    ]
+  }
+}

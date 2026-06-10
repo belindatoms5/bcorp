@@ -1,0 +1,434 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum SchemeRole {
+  CHAIRPERSON
+  SECRETARY
+  TREASURER
+  COMMITTEE_MEMBER
+  OWNER
+  CONTRACTOR
+}
+
+enum FundType {
+  ADMIN
+  SINKING
+}
+
+enum ResolutionType {
+  ORDINARY
+  SPECIAL
+  MAJORITY
+}
+
+enum MeetingType {
+  AGM
+  EGM
+  COMMITTEE
+}
+
+enum MeetingStatus {
+  SCHEDULED
+  NOTICE_ISSUED
+  HELD
+  MINUTES_DRAFT
+  MINUTES_APPROVED
+}
+
+enum MotionOutcome {
+  PASSED
+  FAILED
+  WITHDRAWN
+  DEFERRED
+}
+
+enum LevyStatus {
+  DRAFT
+  ISSUED
+  PAID
+  OVERDUE
+  DEBT_RECOVERY
+}
+
+enum MaintenanceAreaType {
+  COMMON_PROPERTY
+  LOT_OWNER
+}
+
+enum MaintenanceStatus {
+  OPEN
+  CLASSIFIED
+  QUOTE_REQUESTED
+  WORK_ORDERED
+  COMPLETED
+  CLOSED
+}
+
+enum WorkOrderStatus {
+  PENDING
+  ACCEPTED
+  IN_PROGRESS
+  COMPLETED
+  INVOICED
+  PAID
+}
+
+enum BreachStatus {
+  REPORTED
+  FORM_1_ISSUED
+  RESPONSE_PENDING
+  RESOLVED
+  ESCALATED_TO_BCCM
+}
+
+enum VoteValue {
+  FOR
+  AGAINST
+  ABSTAIN
+}
+
+model Scheme {
+  id               String   @id @default(uuid())
+  ctsNumber        String   @unique @map("cts_number")
+  name             String
+  address          String
+  regulationModule String   @default("STANDARD") @map("regulation_module")
+  lotCount         Int      @map("lot_count")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  lots             Lot[]
+  roles            SchemeRoleRecord[]
+  budgets          Budget[]
+  transactions     Transaction[]
+  meetings         Meeting[]
+  maintenanceReqs  MaintenanceRequest[]
+  breachNotices    BreachNotice[]
+  documents        Document[]
+  sinkingForecasts SinkingFundForecast[]
+  announcements    Announcement[]
+
+  @@map("schemes")
+}
+
+model Lot {
+  id                 String @id @default(uuid())
+  schemeId           String @map("scheme_id")
+  lotNumber          String @map("lot_number")
+  entitlementAdmin   Int    @map("entitlement_admin")
+  entitlementSinking Int    @map("entitlement_sinking")
+  address            String
+
+  scheme          Scheme       @relation(fields: [schemeId], references: [id], onDelete: Cascade)
+  owners          LotOwner[]
+  levyNotices     LevyNotice[]
+  breachesAccused BreachNotice[] @relation("AccusedLot")
+
+  @@unique([schemeId, lotNumber])
+  @@map("lots")
+}
+
+model User {
+  id        String    @id @default(uuid())
+  email     String    @unique
+  fullName  String    @map("full_name")
+  phone     String?
+  avatarUrl String?   @map("avatar_url")
+  lastLogin DateTime? @map("last_login")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  lotOwnerships    LotOwner[]
+  schemeRoles      SchemeRoleRecord[]
+  transactions     Transaction[]
+  maintenanceReqs  MaintenanceRequest[]
+  breachesReported BreachNotice[]
+  documents        Document[]
+  votes            Vote[]
+  workOrders       WorkOrder[]  @relation("ContractorOrders")
+  announcements    Announcement[]
+
+  @@map("users")
+}
+
+model LotOwner {
+  id            String    @id @default(uuid())
+  lotId         String    @map("lot_id")
+  userId        String    @map("user_id")
+  ownershipFrom DateTime  @map("ownership_from")
+  ownershipTo   DateTime? @map("ownership_to")
+  isOccupier    Boolean   @default(false) @map("is_occupier")
+
+  lot            Lot      @relation(fields: [lotId], references: [id], onDelete: Cascade)
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  votes          Vote[]
+  proxiesGranted Vote[]   @relation("ProxyFor")
+
+  @@map("lot_owners")
+}
+
+model SchemeRoleRecord {
+  id        String     @id @default(uuid())
+  schemeId  String     @map("scheme_id")
+  userId    String     @map("user_id")
+  role      SchemeRole
+  termStart DateTime   @map("term_start")
+  termEnd   DateTime?  @map("term_end")
+
+  scheme Scheme @relation(fields: [schemeId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("scheme_roles")
+}
+
+model Budget {
+  id                String   @id @default(uuid())
+  schemeId          String   @map("scheme_id")
+  financialYear     Int      @map("financial_year")
+  fundType          FundType @map("fund_type")
+  totalAmount       Decimal  @map("total_amount") @db.Decimal(12, 2)
+  approvedAtMeeting String?  @map("approved_at_meeting")
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  scheme      Scheme                @relation(fields: [schemeId], references: [id], onDelete: Cascade)
+  levyNotices LevyNotice[]
+  forecasts   SinkingFundForecast[]
+
+  @@unique([schemeId, financialYear, fundType])
+  @@map("budgets")
+}
+
+model LevyNotice {
+  id         String     @id @default(uuid())
+  lotId      String     @map("lot_id")
+  budgetId   String     @map("budget_id")
+  fundType   FundType   @map("fund_type")
+  amount     Decimal    @db.Decimal(12, 2)
+  dueDate    DateTime   @map("due_date")
+  issuedDate DateTime   @map("issued_date")
+  status     LevyStatus @default(DRAFT)
+  pdfUrl     String?    @map("pdf_url")
+  createdAt  DateTime   @default(now()) @map("created_at")
+
+  lot      Lot        @relation(fields: [lotId], references: [id], onDelete: Cascade)
+  budget   Budget     @relation(fields: [budgetId], references: [id], onDelete: Cascade)
+  payments Payment[]
+  arrears  Arrears?
+
+  @@map("levy_notices")
+}
+
+model Payment {
+  id           String   @id @default(uuid())
+  levyNoticeId String   @map("levy_notice_id")
+  amount       Decimal  @db.Decimal(12, 2)
+  paidDate     DateTime @map("paid_date")
+  method       String
+  stripeRef    String?  @map("stripe_ref")
+  reference    String?
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  levyNotice LevyNotice @relation(fields: [levyNoticeId], references: [id], onDelete: Cascade)
+
+  @@map("payments")
+}
+
+model Arrears {
+  id              String     @id @default(uuid())
+  levyNoticeId    String     @unique @map("levy_notice_id")
+  principalOwing  Decimal    @map("principal_owing") @db.Decimal(12, 2)
+  interestAccrued Decimal    @default(0) @map("interest_accrued") @db.Decimal(12, 2)
+  status          LevyStatus
+  updatedAt       DateTime   @updatedAt @map("updated_at")
+
+  levyNotice LevyNotice @relation(fields: [levyNoticeId], references: [id], onDelete: Cascade)
+
+  @@map("arrears")
+}
+
+model SinkingFundForecast {
+  id             String  @id @default(uuid())
+  schemeId       String  @map("scheme_id")
+  budgetId       String? @map("budget_id")
+  year           Int
+  openingBalance Decimal @map("opening_balance") @db.Decimal(12, 2)
+  contributions  Decimal @db.Decimal(12, 2)
+  expenditure    Decimal @db.Decimal(12, 2)
+  closingBalance Decimal @map("closing_balance") @db.Decimal(12, 2)
+  notes          String?
+
+  scheme Scheme  @relation(fields: [schemeId], references: [id], onDelete: Cascade)
+  budget Budget? @relation(fields: [budgetId], references: [id])
+
+  @@unique([schemeId, year])
+  @@map("sinking_fund_forecasts")
+}
+
+model Transaction {
+  id              String   @id @default(uuid())
+  schemeId        String   @map("scheme_id")
+  fundType        FundType @map("fund_type")
+  category        String
+  amount          Decimal  @db.Decimal(12, 2)
+  transactionDate DateTime @map("transaction_date")
+  description     String
+  createdById     String   @map("created_by")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  scheme    Scheme @relation(fields: [schemeId], references: [id], onDelete: Cascade)
+  createdBy User   @relation(fields: [createdById], references: [id])
+
+  @@map("transactions")
+}
+
+model Meeting {
+  id               String        @id @default(uuid())
+  schemeId         String        @map("scheme_id")
+  meetingType      MeetingType   @map("meeting_type")
+  scheduledAt      DateTime      @map("scheduled_at")
+  noticeIssuedDate DateTime?     @map("notice_issued_date")
+  location         String?
+  status           MeetingStatus @default(SCHEDULED)
+  minutesUrl       String?       @map("minutes_url")
+  createdAt        DateTime      @default(now()) @map("created_at")
+
+  scheme  Scheme   @relation(fields: [schemeId], references: [id], onDelete: Cascade)
+  motions Motion[]
+
+  @@map("meetings")
+}
+
+model Motion {
+  id             String         @id @default(uuid())
+  meetingId      String         @map("meeting_id")
+  title          String
+  description    String?
+  resolutionType ResolutionType @map("resolution_type")
+  votesFor       Int            @default(0) @map("votes_for")
+  votesAgainst   Int            @default(0) @map("votes_against")
+  votesAbstain   Int            @default(0) @map("votes_abstain")
+  outcome        MotionOutcome?
+  orderIndex     Int            @map("order_index")
+
+  meeting Meeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  votes   Vote[]
+
+  @@map("motions")
+}
+
+model Vote {
+  id         String    @id @default(uuid())
+  motionId   String    @map("motion_id")
+  lotOwnerId String    @map("lot_owner_id")
+  voteValue  VoteValue @map("vote_value")
+  isProxy    Boolean   @default(false) @map("is_proxy")
+  proxyForId String?   @map("proxy_for_id")
+  castAt     DateTime  @default(now()) @map("cast_at")
+  castById   String    @map("cast_by_id")
+
+  motion   Motion    @relation(fields: [motionId], references: [id], onDelete: Cascade)
+  lotOwner LotOwner  @relation(fields: [lotOwnerId], references: [id])
+  proxyFor LotOwner? @relation("ProxyFor", fields: [proxyForId], references: [id])
+  castBy   User      @relation(fields: [castById], references: [id])
+
+  @@unique([motionId, lotOwnerId])
+  @@map("votes")
+}
+
+model MaintenanceRequest {
+  id           String               @id @default(uuid())
+  schemeId     String               @map("scheme_id")
+  reportedById String               @map("reported_by_id")
+  areaType     MaintenanceAreaType? @map("area_type")
+  title        String
+  description  String
+  photoUrls    String[]             @map("photo_urls")
+  status       MaintenanceStatus    @default(OPEN)
+  priority     String               @default("NORMAL")
+  createdAt    DateTime             @default(now()) @map("created_at")
+  updatedAt    DateTime             @updatedAt @map("updated_at")
+
+  scheme     Scheme     @relation(fields: [schemeId], references: [id], onDelete: Cascade)
+  reportedBy User       @relation(fields: [reportedById], references: [id])
+  workOrder  WorkOrder?
+
+  @@map("maintenance_requests")
+}
+
+model WorkOrder {
+  id           String          @id @default(uuid())
+  requestId    String          @unique @map("request_id")
+  contractorId String          @map("contractor_id")
+  quotedAmount Decimal?        @map("quoted_amount") @db.Decimal(12, 2)
+  finalAmount  Decimal?        @map("final_amount") @db.Decimal(12, 2)
+  invoiceUrl   String?         @map("invoice_url")
+  status       WorkOrderStatus @default(PENDING)
+  notes        String?
+  completedAt  DateTime?       @map("completed_at")
+  createdAt    DateTime        @default(now()) @map("created_at")
+
+  request    MaintenanceRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  contractor User               @relation("ContractorOrders", fields: [contractorId], references: [id])
+
+  @@map("work_orders")
+}
+
+model BreachNotice {
+  id               String       @id @default(uuid())
+  schemeId         String       @map("scheme_id")
+  reportedById     String       @map("reported_by_id")
+  accusedLotId     String       @map("accused_lot_id")
+  bylawReference   String       @map("bylaw_reference")
+  description      String
+  status           BreachStatus @default(REPORTED)
+  form1IssuedAt    DateTime?    @map("form_1_issued_at")
+  responseDeadline DateTime?    @map("response_deadline")
+  resolvedAt       DateTime?    @map("resolved_at")
+  escalatedAt      DateTime?    @map("escalated_at")
+  createdAt        DateTime     @default(now()) @map("created_at")
+
+  scheme     Scheme     @relation(fields: [schemeId], references: [id], onDelete: Cascade)
+  reportedBy User       @relation(fields: [reportedById], references: [id])
+  accusedLot Lot        @relation("AccusedLot", fields: [accusedLotId], references: [id])
+  documents  Document[]
+
+  @@map("breach_notices")
+}
+
+model Document {
+  id             String   @id @default(uuid())
+  schemeId       String   @map("scheme_id")
+  category       String
+  title          String
+  fileUrl        String   @map("file_url")
+  fileSize       Int?     @map("file_size")
+  mimeType       String?  @map("mime_type")
+  uploadedById   String   @map("uploaded_by_id")
+  breachNoticeId String?  @map("breach_notice_id")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  scheme       Scheme        @relation(fields: [schemeId], references: [id], onDelete: Cascade)
+  uploadedBy   User          @relation(fields: [uploadedById], references: [id])
+  breachNotice BreachNotice? @relation(fields: [breachNoticeId], references: [id])
+
+  @@map("documents")
+}
+
+model Announcement {
+  id        String   @id @default(uuid())
+  schemeId  String   @map("scheme_id")
+  authorId  String   @map("author_id")
+  title     String
+  body      String
+  isPinned  Boolean  @default(false) @map("is_pinned")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  scheme Scheme @relation(fields: [schemeId], references: [id], onDelete: Cascade)
+  author User   @relation(fields: [authorId], references: [id])
+
+  @@map("announcements")
+}
